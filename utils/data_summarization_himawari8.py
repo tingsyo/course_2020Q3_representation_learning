@@ -13,7 +13,7 @@ We will scan through the dataset, sumarize the data values:
 
 import numpy as np
 import pandas as pd
-import os
+import os, argparse, logging
 
 __author__ = "Ting-Shuo Yo"
 __copyright__ = "Copyright 2019~2020, DataQualia Lab Co. Ltd."
