@@ -62,28 +62,53 @@ def summarize_single_image(img):
     return({'mean':mean, 'stdev':std, 'min':pt[0],'pt25':pt[1],'median':pt[2],'pt75':pt[3], 'max':pt[4]})
 
 def summarize_images_by_grid(data):
+    # Get data dimension
     ni, nx, ny = data.shape
     mean_image = np.zeros((nx,ny))
-    std_image = np.zeros((nx,ny))
+    var_image = np.zeros((nx,ny))
     pr_image = np.zeros((nx,ny,5))
+    #
     for i in range(nx):
         for j in range(ny):
             mean_image[i,j] = np.mean(data[:,i,j])
-            std_image[i,j] = np.std(data[:,i,j])
-            pr_image[i,j] = np.percentile(data[:,i,j], [0, 25, 50, 75,100])
-    return({'mean':mean_image, 'stdev':std_image, 'percentile_rank':pr_image})
+            var_image[i,j] = np.var(data[:,i,j])
+    return({'mean':mean_image, 'variance':var_image})
 
 def summarize_himawari8_by_grid(flist, batch_size=None):
     ''' Calculate grid-by-grid statistics of a list of Himawari-8 images. '''
-    # Read in data by batch
-    if batch_size is None:
+    if batch_size is None:  # Read in all data
         data = read_multiple_himawari8(flist)
         summary = summarize_images_by_grid(data)
-    else:
-        pass
+    else:                   # Read in data by batch
+        pooled_mean = None
+        pooled_var = None
+        nSample = len(flist)
+        batch_start = 0
+        batch_end = batch_size
+        batch_count = 0
+        # Loop through all files
+        while batch_start < nSample:
+            print("Batch "+str(batch_count))
+            limit = min(batch_end, nSample)
+            data = read_multiple_himawari8(flist[batch_start:limit])
+            # calculate statistics by increment
+            tmp = summarize_images_by_grid(data)
+            if pooled_mean is None:
+                pooled_mean = (limit - batch_start)*tmp['mean']
+                pooled_var = (limit - batch_start - 1)*tmp['variance']
+            else:
+                pooled_mean += (limit - batch_start)*tmp['mean']
+                pooled_var += (limit - batch_start - 1)*tmp['variance']
+            # increment
+            batch_start += batch_size   
+            batch_end += batch_size
+            batch_count += 1
+        # Pooling
+        pooled_mean = pooled_mean/nSample
+        pooled_var = pooled_var/(nSample-batch_count)
+        summary={'mean':pooled_mean, 'variance':pooled_var}
     # 
     return(summary)
-
 
 def statistics_by_image(datainfo):
     ''' Given the data information, derive the statistics by image. '''
