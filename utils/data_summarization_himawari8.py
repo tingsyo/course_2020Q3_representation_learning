@@ -132,6 +132,7 @@ def main():
     parser.add_argument('--datapath', '-i', help='the directory containing Himawari data in btp format.')
     parser.add_argument('--output', '-o', help='the prefix of output files.')
     parser.add_argument('--logfile', '-l', default=None, help='the log file.')
+    parser.add_argument('--batch_size', '-b', default=32, type=int, help='the batch size.')
     args = parser.parse_args()
     # Set up logging
     if not args.logfile is None:
@@ -148,6 +149,7 @@ def main():
     stats_by_image = statistics_by_image(datainfo)
     stats_by_image.to_csv(args.output+'.stats_by_image.csv', index=False)
     # Derive per-grid statistics
+    logging.info('Deriving statistics per grid with batch size:'+str(args.batch_size))
     #stats_by_grid = statistics_by_grid(datainfo)
     # done
     return(0)
