@@ -93,7 +93,7 @@ def summarize_himawari8_by_grid(flist, batch_size=None):
         # Pooling
         pooled_mean = pooled_mean/nSample
         pooled_var = pooled_var/(nSample-batch_count)
-        summary={'mean':pooled_mean, 'variance':pooled_var}
+        summary={'mean':pooled_mean, 'stdev':np.sqrt(pooled_var)}
     # 
     return(summary)
 
@@ -122,7 +122,7 @@ def main():
     logging.info('Deriving statistics per grid with batch size:'+str(args.batch_size))
     stats_by_grid = summarize_himawari8_by_grid(datainfo['xuri'], batch_size=args.batch_size)
     stats_by_grid['mean'].astype('float32').tofile(args.output+'_mean.btp')
-    stats_by_grid['variance'].astype('float32').tofile(args.output+'_var.btp')
+    stats_by_grid['stdev'].astype('float32').tofile(args.output+'_std.btp')
     # done
     return(0)
     
