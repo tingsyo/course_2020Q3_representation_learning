@@ -34,7 +34,7 @@ def list_himawari8_files(dir, suffix='.btp', to_remove='.B13.PCCU.btp'):
         for fn in files:
             if fn.endswith(suffix): 
                  xfiles.append({'timestamp':fn.replace(to_remove,''), 'xuri':os.path.join(root, fn)})
-    return(pd.DataFrame(xfiles))
+    return(pd.DataFrame(xfiles).sort_values('timestamp').reset_index(drop=True))
 
 # Binary reader
 def read_himawari8_btp(furi):
@@ -44,7 +44,7 @@ def read_himawari8_btp(furi):
     data = np.fromfile(furi, np.float32)
     return(data.reshape((3300,3300)))
 
-def read_multiple_himawari8(flist, test_falg=False):
+def read_multiple_himawari8(flist, test_flag=False):
     data = []
     for f in flist:
         if test_flag:
@@ -54,24 +54,11 @@ def read_multiple_himawari8(flist, test_falg=False):
     return(np.array(data))
 
 # Statistical summary
-def summarize_single_image(img):
-    ''' Calculate basic statistics of one Himawari-8 image. '''
-    mean = np.mean(img.flatten())
-    std = np.std(img.flatten())
-    pt = np.percentile(img.flatten(), [0, 25, 50, 75,100])
-    return({'mean':mean, 'stdev':std, 'min':pt[0],'pt25':pt[1],'median':pt[2],'pt75':pt[3], 'max':pt[4]})
-
-def summarize_images_by_grid(data):
-    # Get data dimension
-    ni, nx, ny = data.shape
-    mean_image = np.zeros((nx,ny))
-    var_image = np.zeros((nx,ny))
-    pr_image = np.zeros((nx,ny,5))
-    #
-    for i in range(nx):
-        for j in range(ny):
-            mean_image[i,j] = np.mean(data[:,i,j])
-            var_image[i,j] = np.var(data[:,i,j])
+# Per-grid analysis
+def summarize_by_grid(data):
+    ''' Given a 3D numpy array, calculate the mean and variance on the first axis. '''
+    mean_image = np.mean(data, axis=0)
+    var_image = np.var(data, axis=0)
     return({'mean':mean_image, 'variance':var_image})
 
 def summarize_himawari8_by_grid(flist, batch_size=None):
@@ -88,11 +75,11 @@ def summarize_himawari8_by_grid(flist, batch_size=None):
         batch_count = 0
         # Loop through all files
         while batch_start < nSample:
-            print("Batch "+str(batch_count))
             limit = min(batch_end, nSample)
-            data = read_multiple_himawari8(flist[batch_start:limit])
+            logging.debug("Batch "+str(batch_count)+', size:'+str(limit-batch_start))
+            data = read_multiple_himawari8(flist[batch_start:limit])#, test_flag=True)
             # calculate statistics by increment
-            tmp = summarize_images_by_grid(data)
+            tmp = summarize_by_grid(data)
             if pooled_mean is None:
                 pooled_mean = (limit - batch_start)*tmp['mean']
                 pooled_var = (limit - batch_start - 1)*tmp['variance']
@@ -109,19 +96,6 @@ def summarize_himawari8_by_grid(flist, batch_size=None):
         summary={'mean':pooled_mean, 'variance':pooled_var}
     # 
     return(summary)
-
-def statistics_by_image(datainfo):
-    ''' Given the data information, derive the statistics by image. '''
-    list_stats = []
-    for i in range(datainfo.shape[0]):
-        row = datainfo.iloc[i,:]
-        tmp = read_himawari8_btp(row['xuri'])
-        stats = summarize_single_image(tmp)
-        stats['timestamp'] = row['timestamp']
-        list_stats.append(stats)
-    return(pd.DataFrame(list_stats))
-
-
 
 
 
@@ -143,14 +117,12 @@ def main():
     # Get data files
     logging.info('Scanning data files.')
     datainfo = list_himawari8_files(args.datapath)
-    datainfo.to_csv(args.output+'.file_info.csv', index=False)
-    # Derive per-image statistics
-    logging.info('Deriving statistics per image.')
-    stats_by_image = statistics_by_image(datainfo)
-    stats_by_image.to_csv(args.output+'.stats_by_image.csv', index=False)
+    #datainfo.to_csv(args.output+'.file_info.csv', index=False)
     # Derive per-grid statistics
     logging.info('Deriving statistics per grid with batch size:'+str(args.batch_size))
-    #stats_by_grid = statistics_by_grid(datainfo)
+    stats_by_grid = summarize_himawari8_by_grid(datainfo['xuri'], batch_size=args.batch_size)
+    stats_by_grid['mean'].astype('float32').tofile(args.output+'_mean.btp')
+    stats_by_grid['variance'].astype('float32').tofile(args.output+'_var.btp')
     # done
     return(0)
     
