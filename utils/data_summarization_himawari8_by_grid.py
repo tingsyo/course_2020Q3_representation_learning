@@ -61,12 +61,16 @@ def summarize_by_grid(data):
     var_image = np.var(data, axis=0)
     return({'mean':mean_image, 'variance':var_image})
 
-def summarize_himawari8_by_grid(flist, batch_size=None):
+def summarize_himawari8_by_grid(flist, batch_size=None, shuffle=True, rseed=123):
     ''' Calculate grid-by-grid statistics of a list of Himawari-8 images. '''
     if batch_size is None:  # Read in all data
         data = read_multiple_himawari8(flist)
         summary = summarize_images_by_grid(data)
     else:                   # Read in data by batch
+        # Shuffle flist for random batching
+        if shuffle:
+            flist = flist.sample(frac=1, random_state=rseed).reset_index(drop=True)
+            logging.debug('Shuffling the input data for batch processing.')
         pooled_mean = None
         pooled_var = None
         nSample = len(flist)
@@ -77,7 +81,8 @@ def summarize_himawari8_by_grid(flist, batch_size=None):
         while batch_start < nSample:
             limit = min(batch_end, nSample)
             logging.debug("Batch "+str(batch_count)+', size:'+str(limit-batch_start))
-            data = read_multiple_himawari8(flist[batch_start:limit])#, test_flag=True)
+            data = read_multiple_himawari8(flist[batch_start:limit])
+            logging.debug(flist[batch_start])
             # calculate statistics by increment
             tmp = summarize_by_grid(data)
             if pooled_mean is None:
@@ -107,6 +112,7 @@ def main():
     parser.add_argument('--output', '-o', help='the prefix of output files.')
     parser.add_argument('--logfile', '-l', default=None, help='the log file.')
     parser.add_argument('--batch_size', '-b', default=32, type=int, help='the batch size.')
+    parser.add_argument('--random_seed', '-r', default=123, type=int, help='the random seed for shuffling.')
     args = parser.parse_args()
     # Set up logging
     if not args.logfile is None:
@@ -120,7 +126,7 @@ def main():
     #datainfo.to_csv(args.output+'.file_info.csv', index=False)
     # Derive per-grid statistics
     logging.info('Deriving statistics per grid with batch size:'+str(args.batch_size))
-    stats_by_grid = summarize_himawari8_by_grid(datainfo['xuri'], batch_size=args.batch_size)
+    stats_by_grid = summarize_himawari8_by_grid(datainfo['xuri'], batch_size=args.batch_size, rseed=args.random_seed)
     stats_by_grid['mean'].astype('float32').tofile(args.output+'_mean.btp')
     stats_by_grid['stdev'].astype('float32').tofile(args.output+'_std.btp')
     # done
