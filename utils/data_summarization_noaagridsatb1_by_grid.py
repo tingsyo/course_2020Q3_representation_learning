@@ -27,30 +27,50 @@ __date__ = '2020-07-20'
 
 
 # Utility functions
-def list_himawari8_files(dir, suffix='.btp', to_remove='.B13.PCCU.btp'):
+def list_noaagridsatb1_files(dir, suffix='.v02r01.nc', to_remove=['GRIDSAT-B1.','.v02r01.nc']):
     ''' To scan through the sapecified dir and get the corresponding file with suffix. '''
+    import os
+    import pandas as pd
     xfiles = []
-    for root, dirs, files in os.walk(dir): 
+    for root, dirs, files in os.walk(dir):  # Loop through the directory
         for fn in files:
-            if fn.endswith(suffix): 
-                 xfiles.append({'timestamp':fn.replace(to_remove,''), 'xuri':os.path.join(root, fn)})
+            if fn.endswith(suffix):         # Filter files with suffix
+                timestamp = fn
+                for s in to_remove:         # Removing prefix and suffix to get time-stamp
+                    timestamp = timestamp.replace(s,'')
+                xfiles.append({'timestamp':timestamp, 'xuri':os.path.join(root, fn)})
     return(pd.DataFrame(xfiles).sort_values('timestamp').reset_index(drop=True))
 
 # Binary reader
-def read_himawari8_btp(furi):
-    ''' The method reads in a Himawari 8 image in binary format (.btp file). 
-        the binary file contains 10,890,000 float point numbers (4-byte) represent 
-        the brightness temperature. '''
-    data = np.fromfile(furi, np.float32)
-    return(data.reshape((3300,3300)))
+def read_noaagridsatb1(furi, var='irwin_cdr', scale=0.01, offset=200, remove_na=True, crop_east_asia=True):
+    ''' The method reads in a NOAA-GridSta-B1 image in netCDF4 format (.nc file). 
+        The brightness temperature data was stored in int16 as 'irwin_cdr', with 
+        a scal factor of 0.01 and offset of 200. The missing values is flagged as -31999.
+        More details of the data is described in https://developers.google.com/earth-engine/datasets/catalog/NOAA_CDR_GRIDSAT-B1_V2.
+        Since our analysis focuss on East Asia (0-60'N, 100-160'E), we used an 
+        option to crop the data to this region (index: lat:1000~1858, lon:4000~4858).
+        The output is a 2-d numpy array of float32 with shape (858, 858).
+    '''
+    import numpy as np
+    import netCDF4 as nc
+    # Read in data
+    data = nc.Dataset(furi)
+    cdr = np.array(data.variables['irwin_cdr'])*scale+offset
+    # Remove missing value
+    if remove_na:
+        cdr[cdr<0] = offset
+    # Crop domain to East-Asia (0-60'N, 100-160'E)
+    if crop_east_asia:
+        return(cdr[0, 1000:1858, 4000:4858])
+    else:
+        return(cdr[0,:,:])
 
-def read_multiple_himawari8(flist, test_flag=False):
+def read_multiple_noaagridsatb1(flist):
+    ''' This method reads in a list of NOAA-GridSat-B1 images and returns a numpy array. '''
+    import numpy as np
     data = []
     for f in flist:
-        if test_flag:
-            data.append(read_himawari8_btp(f)[1600:1700,1600:1700])
-        else:
-            data.append(read_himawari8_btp(f))
+        data.append(read_noaagridsatb1(f))
     return(np.array(data))
 
 # Statistical summary
@@ -61,11 +81,12 @@ def summarize_by_grid(data):
     var_image = np.var(data, axis=0)
     return({'mean':mean_image, 'variance':var_image})
 
-def summarize_himawari8_by_grid(flist, batch_size=None, shuffle=True, rseed=123):
-    ''' Calculate grid-by-grid statistics of a list of Himawari-8 images. '''
+def summarize_noaagridsatb1_by_grid(flist, batch_size=None, shuffle=True, rseed=123):
+    ''' Calculate grid-by-grid statistics of a list of NOAA-GridSat-B1 images. '''
     if batch_size is None:  # Read in all data
-        data = read_multiple_himawari8(flist)
-        summary = summarize_by_grid(data)
+        data = read_multiple_noaagridsatb1(flist)
+        tmp = summarize_by_grid(data)
+        summary={'mean':tmp['mean'], 'stdev':np.sqrt(tmp['variance'])}
     else:                   # Read in data by batch
         # Shuffle flist for random batching
         if shuffle:
@@ -81,7 +102,7 @@ def summarize_himawari8_by_grid(flist, batch_size=None, shuffle=True, rseed=123)
         while batch_start < nSample:
             limit = min(batch_end, nSample)
             logging.debug("Batch "+str(batch_count)+', size:'+str(limit-batch_start))
-            data = read_multiple_himawari8(flist[batch_start:limit])
+            data = read_multiple_noaagridsatb1(flist[batch_start:limit])
             logging.debug(flist[batch_start])
             # calculate statistics by increment
             tmp = summarize_by_grid(data)
@@ -103,7 +124,6 @@ def summarize_himawari8_by_grid(flist, batch_size=None, shuffle=True, rseed=123)
     return(summary)
 
 
-
 #-----------------------------------------------------------------------
 def main():
     # Configure Argument Parser
@@ -122,13 +142,13 @@ def main():
     logging.debug(args)
     # Get data files
     logging.info('Scanning data files.')
-    datainfo = list_himawari8_files(args.datapath)
+    datainfo = list_noaagridsatb1_files(args.datapath)
     #datainfo.to_csv(args.output+'.file_info.csv', index=False)
     # Derive per-grid statistics
     logging.info('Deriving statistics per grid with batch size:'+str(args.batch_size))
-    stats_by_grid = summarize_himawari8_by_grid(datainfo['xuri'], batch_size=args.batch_size, rseed=args.random_seed)
-    stats_by_grid['mean'].astype('float32').tofile(args.output+'_mean.btp')
-    stats_by_grid['stdev'].astype('float32').tofile(args.output+'_std.btp')
+    stats_by_grid = summarize_noaagridsatb1_by_grid(datainfo['xuri'], batch_size=args.batch_size, rseed=args.random_seed)
+    stats_by_grid['mean'].astype('float32').tofile(args.output+'_mean.npy')
+    stats_by_grid['stdev'].astype('float32').tofile(args.output+'_std.npy')
     # done
     return(0)
     
