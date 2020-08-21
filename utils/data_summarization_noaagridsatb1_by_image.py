@@ -86,6 +86,7 @@ def statistics_by_image(datainfo):
     list_stats = []
     for i in range(datainfo.shape[0]):
         row = datainfo.iloc[i,:]
+        logging.debug(row['xuri'])
         tmp = read_noaagridsatb1(row['xuri'])
         stats = summarize_single_image(tmp)
         stats['timestamp'] = row['timestamp']
