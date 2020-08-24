@@ -100,8 +100,8 @@ def fit_ipca_partial(finfo, n_component=20, batch_size=128):
         data = read_multiple_noaagridsatb1(finfo['xuri'].iloc[batch_start:limit], flatten=True)
         print(data.shape)
         # increment
-        batch_start += limit   
-        batch_end += batch_size
+        batch_start = limit   
+        batch_end = limit + batch_size
         batch_count += 1
         # Partial fit with batch data
         ipca.partial_fit(data)
