@@ -36,7 +36,7 @@ def list_noaagridsatb1_files(dir, suffix='.v02r01.nc', to_remove=['GRIDSAT-B1.',
     import os
     import pandas as pd
     xfiles = []
-    for root, dirs, files in os.walk(dir):  # Loop through the directory
+    for root, dirs, files in os.walk(dir, followlinks=True):  # Loop through the directory
         for fn in files:
             if fn.endswith(suffix):         # Filter files with suffix
                 timestamp = fn
@@ -91,14 +91,15 @@ def fit_ipca_partial(finfo, n_component=20, batch_size=128):
     batch_end = batch_size
     batch_count = 0
     while batch_start < nSample:
+        logging.debug('Starting batch: '+str(batch_count))
         # Check bound
         limit = min(batch_end, nSample)         # Check for the final batch
         if n_component>(nSample-batch_end):     # Merge the final batch if it's too small
-            print('The final batch is too small, merge it to the previous batch.')
+            logging.info('The final batch is too small, merge it to the previous batch.')
             limit = nSample
         # Read batch data
         data = read_multiple_noaagridsatb1(finfo['xuri'].iloc[batch_start:limit], flatten=True)
-        print(data.shape)
+        logging.debug(data.shape)
         # increment
         batch_start = limit   
         batch_end = limit + batch_size
@@ -148,7 +149,7 @@ def main():
     logging.info("Explained variance ratio: "+ str(evr))
     # Output components
     com_header = ['pc'+str(x+1) for x in range(args.n_component)]
-    writeToCsv(com, args.output+'.components.csv', header=com_header)
+    #writeToCsv(com, args.output+'.components.csv', header=com_header)
     pd.DataFrame({'ev':ev, 'evr':evr}).to_csv(args.output+'.exp_var.csv')
     # Output fitted IPCA model
     joblib.dump(ipca, args.output+".pca.mod")
