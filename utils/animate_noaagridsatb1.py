@@ -117,7 +117,7 @@ def create_noaagridsatb1_movie(finfo, output, workspace='./', fps=32):
     out = cv2.VideoWriter(output, fourcc, fps, (512, 512))
     # Loop through file-list
     for i in range(finfo.shape[0]):
-        logging.debug('Encoding '+finfo['timestamp'].iloc[i])
+        logging.debug('    Encoding '+finfo['timestamp'].iloc[i])
         # Load raw data
         data = read_noaagridsatb1(finfo['xuri'].iloc[i])
         # Create the frame
@@ -143,6 +143,7 @@ def main():
     parser.add_argument('--datapath', '-i', help='the directory containing Himawari data in btp format.')
     parser.add_argument('--output', '-o', help='the prefix of output files.')
     parser.add_argument('--workspace', '-w', default='./', help='temporary workspace for storing images.')
+    parser.add_argument('--fps', '-f', default=32, help='Frame rate for the output movie.')
     parser.add_argument('--logfile', '-l', default=None, help='the log file.')
     args = parser.parse_args()
     # Set up logging
@@ -161,7 +162,8 @@ def main():
     # Convert images into movie
     #logging.info("Converting dataset into images")
     #tomp4 = images_to_mp4(datainfo, workspace=args.workspace, output=args.output)
-    create_noaagridsatb1_movie(datainfo, output=args.output, workspace=args.workspace, fps=2)
+    logging.info('Creating movie.')
+    create_noaagridsatb1_movie(datainfo, output=args.output, workspace=args.workspace, fps=float(args.fps))
     # done
     return(0)
     
