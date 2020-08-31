@@ -83,7 +83,7 @@ def images_to_mp4(finfo, workspace, output):
     # Determine the width and height from the first image
     image_path = workspace + '/' + finfo['timestamp'].iloc[0] + '.png'
     frame = cv2.imread(image_path)
-    cv2.imshow('video',frame)
+    #cv2.imshow('video',frame)
     height, width, channels = frame.shape
 
     # Define the codec and create VideoWriter object
@@ -106,6 +106,35 @@ def images_to_mp4(finfo, workspace, output):
     #
     return(0)  
 
+def create_noaagridsatb1_movie(finfo, output, workspace='./', fps=32):
+    # Setting parameters for Basemap
+    lat0 = 0.0
+    lat1 = 60.059998
+    lon0 = 100.0
+    lon1 = 160.06
+    # Initialize movie file
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v') # Be sure to use lower case
+    out = cv2.VideoWriter(output, fourcc, fps, (512, 512))
+    # Loop through file-list
+    for i in range(finfo.shape[0]):
+        logging.debug('Encoding '+finfo['timestamp'].iloc[i])
+        # Load raw data
+        data = read_noaagridsatb1(finfo['xuri'].iloc[i])
+        # Create the frame
+        plt.figure(figsize=(5.12, 5.12), dpi=100)
+        m = Basemap(llcrnrlon=lon0, urcrnrlon=lon1, llcrnrlat=lat0, urcrnrlat=lat1, resolution='l')
+        m.drawcoastlines()
+        m.imshow(data, alpha=0.99, cmap='Greys', vmin=180, vmax=300)
+        m.colorbar()
+        plt.title(finfo['timestamp'].iloc[i])
+        plt.savefig(workspace+'/temp.png')
+        # Load image and write to frame
+        frame = cv2.imread(workspace+'/temp.png')
+        out.write(frame)
+    #
+    out.release()
+    cv2.destroyAllWindows()    
+    return(0)
 
 #-----------------------------------------------------------------------
 def main():
@@ -127,11 +156,12 @@ def main():
     datainfo = list_noaagridsatb1_files(args.datapath)
     #datainfo.to_csv(args.output+'.file_info.csv', index=False)
     # Convert data into image
-    logging.info("Converting dataset into images")
-    toimg = create_noaagridsatb1_images(datainfo, workspace=args.workspace)
+    #logging.info("Converting dataset into images")
+    #toimg = create_noaagridsatb1_images(datainfo, workspace=args.workspace)
     # Convert images into movie
-    logging.info("Converting dataset into images")
-    tomp4 = images_to_mp4(datainfo, workspace=args.workspace, output=args.output)
+    #logging.info("Converting dataset into images")
+    #tomp4 = images_to_mp4(datainfo, workspace=args.workspace, output=args.output)
+    create_noaagridsatb1_movie(datainfo, output=args.output, workspace=args.workspace, fps=2)
     # done
     return(0)
     
