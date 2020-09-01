@@ -77,6 +77,7 @@ def create_noaagridsatb1_images(finfo, workspace):
         m.colorbar()
         plt.title(finfo['timestamp'].iloc[i])
         plt.savefig(workspace+'/'+finfo['timestamp'].iloc[i]+'.png')
+        plt.close()
     return(0)
 
 def images_to_mp4(finfo, workspace, output):
