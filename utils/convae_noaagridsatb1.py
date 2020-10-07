@@ -15,10 +15,11 @@ The autoencoder is developed with Tensorflow(2.3.1).
 '''
 import numpy as np
 import pandas as pd
-import os, argparse, logging
-import joblib, csv
+import os, argparse, logging, csv, h5py
 import matplotlib.pyplot as plt
 import tensorflow as tf
+from tensorflow.keras.layers import Input, Dense, Flatten, Reshape, Conv2D, MaxPooling2D, UpSampling2D
+from tensorflow.keras.models import Model
 
 __author__ = "Ting-Shuo Yo"
 __copyright__ = "Copyright 2020~2022, DataQualia Lab Co. Ltd."
@@ -30,6 +31,10 @@ __email__ = "tingyo@dataqualia.com"
 __status__ = "development"
 __date__ = '2020-10-01'
 
+# Parameters
+NY = 858
+NX = 858
+NC = 1
 
 # Utility functions
 def list_noaagridsatb1_files(dir, suffix='.v02r01.nc', to_remove=['GRIDSAT-B1.','.v02r01.nc']):
@@ -102,7 +107,31 @@ def data_generator_ae(flist, batch_size, rseed=0):
             batch_end += batch_size
 
 
-
+def initialize_conv_autoencoder_noaagridsatb1(input_shape):
+    ''' The convolutional autoencoder. '''
+    # Define input layer
+    input_data = Input(shape=input_shape)  # adapt this if using `channels_first` image data format
+    # Define encoder layers
+    x = Conv2D(32, (3, 3), activation='relu', padding='same', name='encoder_conv1')(input_data)
+    x = MaxPooling2D((2, 2), name='encoder_maxpool1')(x)
+    x = Conv2D(16, (3, 3), activation='relu', padding='same', name='encoder_conv2')(x)
+    x = MaxPooling2D((3, 3), name='encoder_maxpool2')(x)
+    x = Conv2D(8, (3, 3), activation='relu', padding='same', name='encoder_conv3')(x)
+    encoded = MaxPooling2D((11, 11), name='encoder_maxpool3')(x)
+    # Define decoder layers
+    x = Conv2D(8, (3, 3), activation='relu', padding='same', name='decoder_conv1')(encoded)
+    x = UpSampling2D((11, 11), name='decoder_upsamp1')(x)
+    x = Conv2D(16, (3, 3), activation='relu', padding='same', name='decoder_conv2')(x)
+    x = UpSampling2D((3, 3), name='decoder_upsamp2')(x)
+    x = Conv2D(32, (3, 3), activation='relu', padding='same', name='decoder_conv3')(x)
+    x = UpSampling2D((2, 2), name='decoder_upsamp4')(x)
+    decoded = Conv2D(1, (3, 3), activation='sigmoid', name='decoder_output', padding='same')(x)
+    # Define autoencoder
+    autoencoder = Model(input_data, decoded)
+    autoencoder.compile(optimizer='adam', loss=tf.keras.losses.MeanSquaredError(), metrics=['cosine_similarity'])
+    # Encoder
+    encoder = Model(input_data, encoded)
+    return((autoencoder, encoder))
 
 #-----------------------------------------------------------------------
 def main():
@@ -113,6 +142,7 @@ def main():
     parser.add_argument('--logfile', '-l', default=None, help='the log file.')
     parser.add_argument('--batch_size', '-b', default=128, type=int, help='the batch size.')
     parser.add_argument('--random_seed', '-r', default=0, type=int, help='the random seed for shuffling.')
+    parser.add_argument('--epochs', '-e', default=1, type=int, help='number of epochs.')
     args = parser.parse_args()
     # Set up logging
     if not args.logfile is None:
@@ -123,19 +153,25 @@ def main():
     # Get data files
     logging.info('Scanning data files.')
     datainfo = list_noaagridsatb1_files(args.datapath)
-    # IncrementalPCA
+    # Initialize the autoencoder
     logging.info("Building convolutional autoencoder with batch size of " + str(args.batch_size))
-    ipca = fit_ipca_partial(datainfo, n_component=args.n_component, batch_size=args.batch_size)
-    ev = ipca.explained_variance_
-    evr = ipca.explained_variance_ratio_
-    com = np.transpose(ipca.components_)
-    logging.info("Explained variance ratio: "+ str(evr))
-    # Output components
-    com_header = ['pc'+str(x+1) for x in range(args.n_component)]
-    #writeToCsv(com, args.output+'.components.csv', header=com_header)
-    pd.DataFrame({'ev':ev, 'evr':evr}).to_csv(args.output+'.exp_var.csv')
-    # Output fitted IPCA model
-    joblib.dump(ipca, args.output+".pca.mod")
+    ae = initialize_conv_autoencoder_noaagridsatb1((NY, NX, NC))
+    # Debug info
+    nSample = datainfo.shape[0]
+    logging.info(ae[0].summary())
+    logging.info("Training autoencoder with data size: "+str(nSample))
+    steps_train = np.ceil(nSample/args.batch_size)
+    logging.info("Training data steps: " + str(steps_train))
+    # Train the autoencoder
+    hist = ae[0].fit(data_generator_ae(datainfo, args.batch_size, rseed=args.random_seed), 
+        steps_per_epoch=steps_train,
+        epochs=args.epochs,
+        max_queue_size=args.batch_size,
+        verbose=1)
+    # Prepare output
+    pd.DataFrame(hist.history).to_csv(args.output+'_hist.csv')
+    ae[0].save(args.output+'_ae.h5')
+    ae[1].save(args.output+'_encoder.h5')
     # done
     return(0)
     
