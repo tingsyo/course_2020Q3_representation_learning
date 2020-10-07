@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 '''
-This script provide functions that read and perform PCA with NOAA-GridSat-B1 dataset.
+This script provide functions that build convolutional autoencoder to NOAA-GridSat-B1 dataset.
 The domain of the raw data ranged from -70' to 69.93'N, -180' to 179.94'E, with 0.07' intervals. 
 The data dimension is (1, 2000, 5143), and missing values is -31999.
 
@@ -11,23 +11,24 @@ According to the official how to, the variable(irwin_cdr) contains int16 with va
 
 To focus our analysis to East Asia, we cut off a square of 0'~60'N, 100'~160'E (858,858).
 
-The PCA is performed with IncrementalPCA from sklearn.
+The autoencoder is developed with Tensorflow(2.3.1).
 '''
 import numpy as np
 import pandas as pd
 import os, argparse, logging
-from sklearn.decomposition import PCA, IncrementalPCA
 import joblib, csv
+import matplotlib.pyplot as plt
+import tensorflow as tf
 
 __author__ = "Ting-Shuo Yo"
-__copyright__ = "Copyright 2019~2020, DataQualia Lab Co. Ltd."
+__copyright__ = "Copyright 2020~2022, DataQualia Lab Co. Ltd."
 __credits__ = ["Ting-Shuo Yo"]
 __license__ = "Apache License 2.0"
 __version__ = "0.1.0"
 __maintainer__ = "Ting-Shuo Yo"
 __email__ = "tingyo@dataqualia.com"
 __status__ = "development"
-__date__ = '2020-07-20'
+__date__ = '2020-10-01'
 
 
 # Utility functions
@@ -81,57 +82,35 @@ def read_multiple_noaagridsatb1(flist, flatten=False):
     return(np.array(data))
 
 
-# Incremental PCA
-def fit_ipca_partial(finfo, n_component=20, batch_size=128, rseed=0):
-    ''' Initial and fit a PCA model with incremental PCA. '''
+def data_generator_ae(flist, batch_size, rseed=0):
+    ''' Data generator for batched processing. '''
+    nSample = len(flist)
     # Shuffle file list if specified
     if rseed!=0:
         flist = flist.sample(frac=1, random_state=rseed).reset_index(drop=True)
         logging.info('Shuffling the input data for batch processing with random seed: '+str(rseed))
-    # Initialize the PCA object
-    ipca = IncrementalPCA(n_components=n_component, batch_size=batch_size)
-    # Loop through finfo
-    nSample = len(finfo)
-    batch_start = 0
-    batch_end = batch_size
-    batch_count = 0
-    while batch_start < nSample:
-        logging.debug('Starting batch: '+str(batch_count))
-        # Check bound
-        limit = min(batch_end, nSample)         # Check for the final batch
-        if n_component>(nSample-batch_end):     # Merge the final batch if it's too small
-            logging.info('The final batch is too small, merge it to the previous batch.')
-            limit = nSample
-        # Read batch data
-        data = read_multiple_noaagridsatb1(finfo['xuri'].iloc[batch_start:limit], flatten=True)
-        logging.debug(data.shape)
-        # increment
-        batch_start = limit   
-        batch_end = limit + batch_size
-        batch_count += 1
-        # Partial fit with batch data
-        ipca.partial_fit(data)
-    #
-    return(ipca)
+    # This line is just to make the generator infinite, keras needs that    
+    while True:
+        batch_start = 0
+        batch_end = batch_size
+        while batch_start < nSample:
+            limit = min(batch_end, nSample)
+            X = read_multiple_noaagridsatb1(flist['xuri'].iloc[batch_start:limit])
+            #print(X.shape)
+            yield (X,X) # a tuple with two numpy arrays with batch_size samples     
+            batch_start += batch_size   
+            batch_end += batch_size
 
 
-def writeToCsv(output, fname, header=None):
-    # Overwrite the output file:
-    with open(fname, 'w', newline='', encoding='utf-8-sig') as csvfile:
-        writer = csv.writer(csvfile, delimiter=',',quotechar='"', quoting=csv.QUOTE_ALL)
-        if header is not None:
-            writer.writerow(header)
-        for r in output:
-            writer.writerow(r)
-    return(0)
+
+
 #-----------------------------------------------------------------------
 def main():
     # Configure Argument Parser
-    parser = argparse.ArgumentParser(description='Performing Incremental PCA on NOAA-GridSat-B1 data.')
+    parser = argparse.ArgumentParser(description='Building convolutional autoencoder .')
     parser.add_argument('--datapath', '-i', help='the directory containing NOAA-GridSat-B1 data in netCDF4 format.')
     parser.add_argument('--output', '-o', help='the prefix of output files.')
     parser.add_argument('--logfile', '-l', default=None, help='the log file.')
-    parser.add_argument('--n_component', '-n', default=50, type=int, help='the number of PCs to derive.')
     parser.add_argument('--batch_size', '-b', default=128, type=int, help='the batch size.')
     parser.add_argument('--random_seed', '-r', default=0, type=int, help='the random seed for shuffling.')
     args = parser.parse_args()
@@ -144,11 +123,9 @@ def main():
     # Get data files
     logging.info('Scanning data files.')
     datainfo = list_noaagridsatb1_files(args.datapath)
-    #datainfo.to_csv(args.output+'.file_info.csv', index=False)
     # IncrementalPCA
-    logging.info("Performing IncrementalPCA with "+ str(args.n_component)+" components and batch size of " + str(args.batch_size))
-    ipca = fit_ipca_partial(datainfo, n_component=args.n_component, batch_size=args.batch_size, rseed=args.random_seed)
-    # Preparing output
+    logging.info("Building convolutional autoencoder with batch size of " + str(args.batch_size))
+    ipca = fit_ipca_partial(datainfo, n_component=args.n_component, batch_size=args.batch_size)
     ev = ipca.explained_variance_
     evr = ipca.explained_variance_ratio_
     com = np.transpose(ipca.components_)
